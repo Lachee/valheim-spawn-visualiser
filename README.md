@@ -13,7 +13,7 @@ A BepInEx mod for Valheim that shows where creatures can spawn around you. Press
 | ⬜ Grey | Blocked: something is in the way (buildings, rocks, location colliders, or ground that isn't terrain) |
 | *(nothing)* | No spawn rule fits this spot (too steep, wrong biome, too high or low, and so on) |
 
-**Ghost mode** (on by default, toggle with **Shift+J**) still draws tile parts hidden behind grass, rocks, hills or players, at reduced opacity. Turn it off and tiles hide behind things.
+**Ghost mode** (off by default, toggle with **Shift+J**) still draws tile parts hidden behind grass, rocks, hills or players, at reduced opacity. Turn it off and tiles hide behind things.
 
 * **Rings:** the bright ring at 40 m marks where world spawns stop: mobs never spawn closer to you than this. The faint ring at 80 m is the outer edge of where spawns are attempted.
 * **Labels** over nests, spawners and fixed creature spawn points (dungeons, camps) show what they spawn and how often.

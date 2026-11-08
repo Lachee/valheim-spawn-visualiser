@@ -87,7 +87,7 @@ namespace SpawnVisualiser
 
             Opacity = Config.Bind("Display", "Opacity", 0.8f,
                 new ConfigDescription("Overall opacity of the overlay tiles.", new AcceptableValueRange<float>(0.1f, 1f)));
-            GhostMode = Config.Bind("Display", "Ghost mode", true,
+            GhostMode = Config.Bind("Display", "Ghost mode", false,
                 "On: parts of tiles hidden behind grass, rocks, hills or players are still drawn (at 'Ghost opacity'). Off: tiles hide behind things.");
             GhostOpacity = Config.Bind("Display", "Ghost opacity", 0.35f,
                 new ConfigDescription("Opacity of hidden tile parts in ghost mode, relative to normal. 1 = fully on top of everything.",
