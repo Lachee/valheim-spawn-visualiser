@@ -10,11 +10,15 @@ A BepInEx mod for Valheim that shows where creatures can spawn around you. Press
 | 🟧 Orange | Hostiles can spawn here, but only under other conditions (night, certain weather) |
 | 🟦 Blue | Only passive animals (deer, fish, birds…) can spawn here |
 | 🟩 Green | Hostiles *would* spawn here, but your base (workbench, campfire…) is blocking them |
-| *(nothing)* | Nothing can spawn: blocked by buildings, trees or rocks, terrain too steep, wrong biome, etc. |
+| ⬜ Grey | Blocked: something is in the way (buildings, rocks, location colliders, or ground that isn't terrain) |
+| *(nothing)* | No spawn rule fits this spot (too steep, wrong biome, too high or low, and so on) |
+
+**Ghost mode** (on by default, toggle with **Shift+J**) still draws tile parts hidden behind grass, rocks, hills or players, at reduced opacity. Turn it off and tiles hide behind things.
 
 * **Rings:** the bright ring at 40 m marks where world spawns stop: mobs never spawn closer to you than this. The faint ring at 80 m is the outer edge of where spawns are attempted.
 * **Labels** over nests, spawners and fixed creature spawn points (dungeons, camps) show what they spawn and how often.
 * **Legend** lists the creatures that can spawn nearby, the time of day and weather, and whether a raid is active.
+* **Crosshair inspector** (in the legend) explains the spot you're looking at: the object blocking it, or for each creature whether it can spawn and which rule rules it out ("too steep", "in forest", "blocked by base"…).
 
 The overlay uses the same checks as the game's `SpawnSystem.IsSpawnPointGood`: biome, biome area, altitude, slope, forest, lava, ocean depth, distance from world centre, blocking objects and player-base protection. Spawns locked behind boss kills are left out until you unlock them. Spawns from an active raid are included.
 
@@ -22,10 +26,11 @@ The overlay uses the same checks as the game's `SpawnSystem.IsSpawnPointGood`: b
 
 The config file is `BepInEx/config/lachee.spawnvisualiser.cfg`, and you can also change it with Configuration Manager (F1). Settings:
 
-* the toggle key
+* the toggle key and ghost mode key
 * the scan radius (16–128 m) and tile size
 * how often the overlay refreshes and how many tiles it checks per frame
-* opacity, how visible tiles hidden behind grass, rocks or hills are, and each overlay category on or off
+* opacity, ghost mode and its opacity, and each overlay category on or off (including blocked areas)
+* the crosshair inspector
 * rings, labels and the legend, plus where the legend sits
 * every colour
 

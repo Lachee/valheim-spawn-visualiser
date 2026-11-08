@@ -19,13 +19,17 @@ namespace SpawnVisualiser
 
         // General
         internal static ConfigEntry<KeyboardShortcut> ToggleKey;
+        internal static ConfigEntry<KeyboardShortcut> GhostKey;
         internal static ConfigEntry<float> ScanRadius;
         internal static ConfigEntry<int> CellSize;
         internal static ConfigEntry<float> RefreshInterval;
         internal static ConfigEntry<int> CellsPerFrame;
         // Display
         internal static ConfigEntry<float> Opacity;
-        internal static ConfigEntry<float> OccludedOpacity;
+        internal static ConfigEntry<bool> GhostMode;
+        internal static ConfigEntry<float> GhostOpacity;
+        internal static ConfigEntry<bool> ShowBlocked;
+        internal static ConfigEntry<bool> ShowInspector;
         internal static ConfigEntry<bool> ShowPassive;
         internal static ConfigEntry<bool> ShowProtected;
         internal static ConfigEntry<bool> ShowHostileLater;
@@ -38,6 +42,7 @@ namespace SpawnVisualiser
         internal static ConfigEntry<Color> ColorHostileLater;
         internal static ConfigEntry<Color> ColorPassive;
         internal static ConfigEntry<Color> ColorProtected;
+        internal static ConfigEntry<Color> ColorBlocked;
 
         private static readonly AccessTools.FieldRef<List<CreatureSpawner>> s_creatureSpawners =
             AccessTools.StaticFieldRefAccess<List<CreatureSpawner>>(AccessTools.Field(typeof(CreatureSpawner), "m_creatureSpawners"));
@@ -66,6 +71,8 @@ namespace SpawnVisualiser
 
             ToggleKey = Config.Bind("General", "Toggle key", new KeyboardShortcut(KeyCode.J),
                 "Key that toggles the spawn overlay on and off.");
+            GhostKey = Config.Bind("General", "Ghost mode key", new KeyboardShortcut(KeyCode.J, KeyCode.LeftShift),
+                "Key that toggles ghost mode (tiles shown through grass, rocks, hills and players).");
             ScanRadius = Config.Bind("General", "Scan radius", 64f,
                 new ConfigDescription("How far around you (in metres) spawnable ground is shown. World spawns happen 40-80 m from players.",
                     new AcceptableValueRange<float>(16f, 128f)));
@@ -80,9 +87,15 @@ namespace SpawnVisualiser
 
             Opacity = Config.Bind("Display", "Opacity", 0.8f,
                 new ConfigDescription("Overall opacity of the overlay tiles.", new AcceptableValueRange<float>(0.1f, 1f)));
-            OccludedOpacity = Config.Bind("Display", "Hidden tile opacity", 0.35f,
-                new ConfigDescription("Opacity (relative to normal) of tiles hidden behind grass, rocks or hills. 0 hides them completely.",
+            GhostMode = Config.Bind("Display", "Ghost mode", true,
+                "On: parts of tiles hidden behind grass, rocks, hills or players are still drawn (at 'Ghost opacity'). Off: tiles hide behind things.");
+            GhostOpacity = Config.Bind("Display", "Ghost opacity", 0.35f,
+                new ConfigDescription("Opacity of hidden tile parts in ghost mode, relative to normal. 1 = fully on top of everything.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            ShowBlocked = Config.Bind("Display", "Show blocked areas", true,
+                "Show ground where nothing can spawn because something is in the way (buildings, rocks, location colliders, non-terrain ground).");
+            ShowInspector = Config.Bind("Display", "Show crosshair inspector", true,
+                "Explain in the legend why things can or can't spawn where you are looking.");
             ShowPassive = Config.Bind("Display", "Show passive spawns", true, "Show areas where only passive animals (deer, fish, birds...) can spawn.");
             ShowProtected = Config.Bind("Display", "Show protected areas", true, "Show areas where your base (workbench, campfire, etc.) is blocking hostile spawns.");
             ShowHostileLater = Config.Bind("Display", "Show conditional hostile spawns", true, "Show areas where hostiles can spawn, but not right now (e.g. only at night or in certain weather).");
@@ -96,6 +109,7 @@ namespace SpawnVisualiser
             ColorHostileLater = Config.Bind("Colours", "Hostile later", new Color(1f, 0.62f, 0.1f, 0.40f), "Hostile creatures can spawn here under other conditions (night, weather).");
             ColorPassive = Config.Bind("Colours", "Passive only", new Color(0.3f, 0.7f, 1f, 0.30f), "Only passive creatures can spawn here.");
             ColorProtected = Config.Bind("Colours", "Protected", new Color(0.25f, 0.95f, 0.45f, 0.35f), "A player base is preventing hostile spawns here.");
+            ColorBlocked = Config.Bind("Colours", "Blocked", new Color(0.55f, 0.55f, 0.6f, 0.22f), "Something is in the way, so nothing can spawn here.");
 
             Config.SettingChanged += (_, __) => _dirty = true;
 
@@ -115,6 +129,7 @@ namespace SpawnVisualiser
                 case CellState.Protected: return ShowProtected.Value;
                 case CellState.HostileLater: return ShowHostileLater.Value;
                 case CellState.HostileNow: return true;
+                case CellState.Blocked: return ShowBlocked.Value;
                 default: return false;
             }
         }
@@ -127,6 +142,7 @@ namespace SpawnVisualiser
                 case CellState.Protected: return ColorProtected.Value;
                 case CellState.HostileLater: return ColorHostileLater.Value;
                 case CellState.HostileNow: return ColorHostileNow.Value;
+                case CellState.Blocked: return ColorBlocked.Value;
                 default: return Color.clear;
             }
         }
@@ -144,7 +160,13 @@ namespace SpawnVisualiser
         {
             Player player = Player.m_localPlayer;
 
-            if (player != null && ToggleKey.Value.IsDown() && !IsTyping())
+            if (player != null && _enabled && GhostKey.Value.IsDown() && !IsTyping())
+            {
+                GhostMode.Value = !GhostMode.Value;
+                MessageHud.instance?.ShowMessage(MessageHud.MessageType.TopLeft,
+                    GhostMode.Value ? "Spawn visualiser ghost mode: ON" : "Spawn visualiser ghost mode: OFF");
+            }
+            else if (player != null && ToggleKey.Value.IsDown() && !IsTyping())
             {
                 _enabled = !_enabled;
                 _nextScan = 0f;
@@ -162,6 +184,7 @@ namespace SpawnVisualiser
             if (_overlay == null) _overlay = new OverlayRenderer();
             _overlay.SetVisible(true);
             _overlay.SetRingsVisible(ShowRings.Value);
+            _overlay.SetGhost(GhostMode.Value, GhostOpacity.Value);
             _overlay.UpdateRings(player.transform.position);
 
             if (_dirty && !_scanner.Busy)
@@ -179,11 +202,40 @@ namespace SpawnVisualiser
                 _nextScan = Time.time + RefreshInterval.Value;
             }
 
+            if (ShowInspector.Value && Time.time >= _nextInspect)
+            {
+                _nextInspect = Time.time + 0.25f;
+                UpdateInspector();
+            }
+
             if (ShowSpawners.Value && Time.time >= _nextMarkerRefresh)
             {
                 _nextMarkerRefresh = Time.time + 2f;
                 RefreshMarkers(player.transform.position);
             }
+        }
+
+        // ---------------------------------------------------------------- Crosshair inspector
+
+        private static readonly int s_inspectMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain");
+        private List<string> _inspectLines = new List<string>();
+        private float _nextInspect;
+        private float _inspectDistance;
+
+        private static Camera GetCamera()
+        {
+            return GameCamera.instance != null ? GameCamera.instance.GetComponent<Camera>() : Camera.main;
+        }
+
+        private void UpdateInspector()
+        {
+            Camera cam = GetCamera();
+            _inspectLines = new List<string>();
+            if (cam == null) return;
+            Ray ray = cam.ScreenPointToRay(new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
+            if (!Physics.Raycast(ray, out RaycastHit hit, 300f, s_inspectMask, QueryTriggerInteraction.Ignore)) return;
+            _inspectDistance = Vector3.Distance(Player.m_localPlayer.transform.position, hit.point);
+            _inspectLines = _scanner.Explain(hit.point);
         }
 
         // ---------------------------------------------------------------- Spawner markers
@@ -300,6 +352,7 @@ namespace SpawnVisualiser
             if (ShowHostileLater.Value) rows.Add(new LegendRow(ColorHostileLater.Value, "Hostiles at night / in weather"));
             if (ShowPassive.Value) rows.Add(new LegendRow(ColorPassive.Value, "Passive animals only"));
             if (ShowProtected.Value) rows.Add(new LegendRow(ColorProtected.Value, "Protected by your base"));
+            if (ShowBlocked.Value) rows.Add(new LegendRow(ColorBlocked.Value, "Blocked (something in the way)"));
 
             var creatures = _scanner.Creatures.Values
                 .OrderByDescending(c => c.Hostile).ThenByDescending(c => c.Now).ThenBy(c => c.Name)
@@ -310,7 +363,10 @@ namespace SpawnVisualiser
                       + line * rows.Count
                       + (ShowRings.Value ? line : 0f)
                       + line                 // time
-                      + (creatures.Count > 0 ? line * (creatures.Count + 1.3f) : line);
+                      + (creatures.Count > 0 ? line * (creatures.Count + 1.3f) : line)
+                      + (ShowInspector.Value && _inspectLines.Count > 0 ? line * (_inspectLines.Count + 1.3f) : 0f);
+            if (ShowInspector.Value && _inspectLines.Count > 0)
+                w = Mathf.Max(w, 420f * scale);
 
             Vector2 pos = LegendPosition.Value;
             var rect = new Rect(Screen.width * pos.x, Screen.height * pos.y, w, h);
@@ -342,18 +398,21 @@ namespace SpawnVisualiser
             string time = EnvMan.IsNight() ? "Night" : "Day";
             string env = EnvMan.instance != null ? EnvMan.instance.GetCurrentEnvironment()?.m_name : null;
             bool raid = RandEventSystem.instance?.GetCurrentSpawners() != null;
-            GUI.Label(new Rect(x, y, iw, line), $"{time}{(string.IsNullOrEmpty(env) ? "" : " · " + env)}{(raid ? " · <color=#ff6655>RAID</color>" : "")}", _smallStyle);
+            string ghost = GhostMode.Value ? $" · ghost on [{GhostKey.Value}]" : $" · ghost off [{GhostKey.Value}]";
+            GUI.Label(new Rect(x, y, iw, line), $"{time}{(string.IsNullOrEmpty(env) ? "" : " · " + env)}{(raid ? " · <color=#ff6655>RAID</color>" : "")}{ghost}", _smallStyle);
             y += line;
 
             if (creatures.Count == 0)
             {
                 GUI.Label(new Rect(x, y, iw, line), _scanner.Version == 0 ? "Scanning…" : "Nothing can spawn nearby", _smallStyle);
-                return;
+                y += line;
             }
-
-            y += line * 0.3f;
-            GUI.Label(new Rect(x, y, iw, line), "Can spawn nearby:", _textStyle);
-            y += line;
+            else
+            {
+                y += line * 0.3f;
+                GUI.Label(new Rect(x, y, iw, line), "Can spawn nearby:", _textStyle);
+                y += line;
+            }
             foreach (CreatureInfo c in creatures)
             {
                 Color col = !c.Hostile ? ColorPassive.Value : c.Now ? ColorHostileNow.Value : ColorHostileLater.Value;
@@ -362,6 +421,18 @@ namespace SpawnVisualiser
                 DrawSwatch(new Rect(x + 4f * scale, y + line * 0.5f - 3f * scale, 6f * scale, 6f * scale), col);
                 GUI.Label(new Rect(x + 16f * scale, y, iw, line), c.Name + $"<color=#aaa49c>{suffix}</color>", _textStyle);
                 y += line;
+            }
+
+            if (ShowInspector.Value && _inspectLines.Count > 0)
+            {
+                y += line * 0.3f;
+                GUI.Label(new Rect(x, y, iw, line), $"Under crosshair <color=#aaa49c>({_inspectDistance:0} m)</color>:", _textStyle);
+                y += line;
+                foreach (string l in _inspectLines)
+                {
+                    GUI.Label(new Rect(x + 8f * scale, y, iw - 8f * scale, line), l, _smallStyle);
+                    y += line;
+                }
             }
         }
 

@@ -12,6 +12,7 @@ namespace SpawnVisualiser
         Protected = 2,     // Hostiles could spawn here, but a player base (workbench, fire...) prevents it
         HostileLater = 3,  // Hostiles can spawn here, but not under current conditions (time of day / weather)
         HostileNow = 4,    // Hostiles can spawn here right now
+        Blocked = 5,       // Not evaluated for priority: something over the ground (or non-terrain ground) blocks all spawns
     }
 
     public struct Cell
@@ -51,6 +52,7 @@ namespace SpawnVisualiser
         private class PrefabInfo
         {
             public bool Hostile;
+            public bool IsCreature;
             public string Name;
         }
 
@@ -144,6 +146,74 @@ namespace SpawnVisualiser
             return false;
         }
 
+        private static readonly int s_blockMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece");
+        private static readonly int s_terrainMask = LayerMask.GetMask("terrain");
+
+        /// <summary>Everything about a ground point the spawn rules look at. Expensive bits are computed lazily.</summary>
+        private struct PointData
+        {
+            public Vector3 P;
+            public Heightmap Hmap;
+            public Heightmap.Biome Biome;
+            public Heightmap.BiomeArea Area;
+            public float Altitude, TiltY, CenterDist, OceanDepth;
+            public int InForest, InLava;
+            public bool InBase;
+
+            public static PointData Create(Vector3 p, Vector3 normal, Heightmap.Biome biome, Heightmap.BiomeArea area, Heightmap hmap)
+            {
+                return new PointData
+                {
+                    P = p, Hmap = hmap, Biome = biome, Area = area,
+                    Altitude = p.y - 30f, // 30 = sea level
+                    TiltY = normal.y,
+                    CenterDist = Utils.LengthXZ(p),
+                    OceanDepth = float.NaN, InForest = -1, InLava = -1,
+                    InBase = EffectArea.IsPointInsideArea(p, EffectArea.Type.PlayerBase) != null,
+                };
+            }
+        }
+
+        /// <summary>Mirrors SpawnSystem.IsSpawnPointGood for one spawner. Returns null if OK, else why not.</summary>
+        private static string Check(SpawnSystem.SpawnData s, ref PointData d)
+        {
+            if ((s.m_biome & d.Biome) == 0) return "wrong biome";
+            if ((s.m_biomeArea & d.Area) == 0) return "wrong part of biome (edge/median)";
+            if (d.Altitude < s.m_minAltitude) return "too low";
+            if (d.Altitude > s.m_maxAltitude) return "too high";
+            if (d.TiltY < Mathf.Cos(Mathf.Deg2Rad * s.m_maxTilt)) return "too steep";
+            if (d.TiltY > Mathf.Cos(Mathf.Deg2Rad * s.m_minTilt)) return "too flat";
+            if (s.m_minDistanceFromCenter > 0f && d.CenterDist < s.m_minDistanceFromCenter) return "too close to world centre";
+            if (s.m_maxDistanceFromCenter > 0f && d.CenterDist > s.m_maxDistanceFromCenter) return "too far from world centre";
+            if (!s.m_inForest || !s.m_outsideForest)
+            {
+                if (d.InForest < 0) d.InForest = WorldGenerator.InForest(d.P) ? 1 : 0;
+                if (!s.m_inForest && d.InForest == 1) return "in forest";
+                if (!s.m_outsideForest && d.InForest == 0) return "not in forest";
+            }
+            if (!s.m_inLava || !s.m_outsideLava)
+            {
+                if (d.InLava < 0) d.InLava = d.Hmap.IsLava(d.P) ? 1 : 0;
+                if (!s.m_inLava && d.InLava == 1) return "on lava";
+                if (!s.m_outsideLava && d.InLava == 0) return "not on lava";
+            }
+            if (s.m_minOceanDepth != s.m_maxOceanDepth)
+            {
+                if (float.IsNaN(d.OceanDepth)) d.OceanDepth = d.Hmap.GetOceanDepth(d.P);
+                if (d.OceanDepth < s.m_minOceanDepth) return "water too shallow";
+                if (d.OceanDepth > s.m_maxOceanDepth) return "water too deep";
+            }
+            return null;
+        }
+
+        private CellState StateFor(Entry entry, ref PointData d)
+        {
+            if (!entry.Data.m_insidePlayerBase && d.InBase)
+                return entry.Hostile ? CellState.Protected : CellState.None;
+            if (!entry.Hostile) return CellState.Passive;
+            return IsActiveNow(entry) ? CellState.HostileNow : CellState.HostileLater;
+        }
+
         private Cell Evaluate(ZoneSystem zs, Vector3 p)
         {
             var cell = new Cell();
@@ -151,64 +221,23 @@ namespace SpawnVisualiser
             cell.Position = p;
             cell.Normal = normal;
             cell.Heightmap = hmap;
-            if (hmap == null) return cell;            // terrain not loaded
-            if (zs.IsBlocked(p)) return cell;         // under a building / tree / rock
+            if (hmap == null)
+            {
+                // Hit something on the terrain layer that isn't a heightmap (or nothing at all): the game can't spawn here either.
+                if (Physics.Raycast(p + Vector3.up * 5000f, Vector3.down, 10000f, s_terrainMask)) cell.State = CellState.Blocked;
+                return cell;
+            }
+            if (zs.IsBlocked(p)) { cell.State = CellState.Blocked; return cell; }
 
-            float altitude = p.y - 30f;               // 30 = sea level
-            float tiltY = normal.y;
-            bool inBase = EffectArea.IsPointInsideArea(p, EffectArea.Type.PlayerBase) != null;
-
-            // Lazily computed, these are comparatively expensive
-            int inForest = -1, inLava = -1;
-            float oceanDepth = float.NaN;
-            float centerDist = Utils.LengthXZ(p);
-
+            PointData d = PointData.Create(p, normal, biome, biomeArea, hmap);
             CellState best = CellState.None;
             List<Entry> entries = GetEntries(hmap);
             for (int e = 0; e < entries.Count; e++)
             {
                 Entry entry = entries[e];
-                SpawnSystem.SpawnData s = entry.Data;
-
-                if ((s.m_biome & biome) == 0) continue;
-                if ((s.m_biomeArea & biomeArea) == 0) continue;
-                if (altitude < s.m_minAltitude || altitude > s.m_maxAltitude) continue;
-                if (tiltY < Mathf.Cos(Mathf.Deg2Rad * s.m_maxTilt) || tiltY > Mathf.Cos(Mathf.Deg2Rad * s.m_minTilt)) continue;
-                if (s.m_minDistanceFromCenter > 0f && centerDist < s.m_minDistanceFromCenter) continue;
-                if (s.m_maxDistanceFromCenter > 0f && centerDist > s.m_maxDistanceFromCenter) continue;
-
-                if (!s.m_inForest || !s.m_outsideForest)
-                {
-                    if (inForest < 0) inForest = WorldGenerator.InForest(p) ? 1 : 0;
-                    if (!s.m_inForest && inForest == 1) continue;
-                    if (!s.m_outsideForest && inForest == 0) continue;
-                }
-                if (!s.m_inLava || !s.m_outsideLava)
-                {
-                    if (inLava < 0) inLava = hmap.IsLava(p) ? 1 : 0;
-                    if (!s.m_inLava && inLava == 1) continue;
-                    if (!s.m_outsideLava && inLava == 0) continue;
-                }
-                if (s.m_minOceanDepth != s.m_maxOceanDepth)
-                {
-                    if (float.IsNaN(oceanDepth)) oceanDepth = hmap.GetOceanDepth(p);
-                    if (oceanDepth < s.m_minOceanDepth || oceanDepth > s.m_maxOceanDepth) continue;
-                }
-
-                CellState state;
-                if (!s.m_insidePlayerBase && inBase)
-                {
-                    if (!entry.Hostile) continue;
-                    state = CellState.Protected;
-                }
-                else if (!entry.Hostile)
-                {
-                    state = CellState.Passive;
-                }
-                else
-                {
-                    state = IsActiveNow(entry) ? CellState.HostileNow : CellState.HostileLater;
-                }
+                if (Check(entry.Data, ref d) != null) continue;
+                CellState state = StateFor(entry, ref d);
+                if (state == CellState.None) continue;
 
                 if (state != CellState.Protected) RecordCreature(entry, state == CellState.HostileNow || !entry.Hostile && IsActiveNow(entry));
                 if (state > best) best = state;
@@ -217,6 +246,76 @@ namespace SpawnVisualiser
 
             cell.State = best;
             return cell;
+        }
+
+        /// <summary>Human-readable breakdown of why things can or can't spawn at a point (for the crosshair inspector).</summary>
+        public List<string> Explain(Vector3 point)
+        {
+            var lines = new List<string>();
+            ZoneSystem zs = ZoneSystem.instance;
+            if (zs == null) return lines;
+            if (_baseEntries.Count == 0) BuildBaseEntries();
+
+            Vector3 p = point;
+            zs.GetGroundData(ref p, out Vector3 normal, out Heightmap.Biome biome, out Heightmap.BiomeArea area, out Heightmap hmap);
+            if (hmap == null)
+            {
+                if (Physics.Raycast(point + Vector3.up * 5000f, Vector3.down, out RaycastHit th, 10000f, s_terrainMask))
+                    lines.Add($"<color=#bbbbbb>Ground is '{Describe(th.collider)}', not terrain: nothing spawns</color>");
+                else
+                    lines.Add("<color=#bbbbbb>No terrain loaded here</color>");
+                return lines;
+            }
+
+            if (Physics.Raycast(p + Vector3.up * 2000f, Vector3.down, out RaycastHit bh, 10000f, s_blockMask))
+            {
+                float dy = bh.point.y - p.y;
+                string where = dy > 0.5f ? $"{dy:0} m above" : dy < -0.5f ? $"{-dy:0} m below" : "on the ground";
+                lines.Add($"<color=#bbbbbb>Blocked by '{Describe(bh.collider)}' ({LayerMask.LayerToName(bh.collider.gameObject.layer)}{(bh.collider.isTrigger ? ", trigger" : "")}, {where})</color>");
+                return lines;
+            }
+
+            PointData d = PointData.Create(p, normal, biome, area, hmap);
+            float slope = Mathf.Acos(Mathf.Clamp(normal.y, -1f, 1f)) * Mathf.Rad2Deg;
+            lines.Add($"{biome} · {d.Altitude:0} m above sea · {slope:0}° slope{(d.InBase ? " · <color=#66ee88>in base</color>" : "")}");
+
+            // Collapse spawner entries by creature: best result wins.
+            var results = new Dictionary<string, string>();
+            var order = new List<string>();
+            foreach (Entry entry in GetEntries(hmap))
+            {
+                string fail = Check(entry.Data, ref d);
+                if (fail == "wrong biome") continue; // noise
+                string text;
+                if (fail == null)
+                {
+                    CellState st = StateFor(entry, ref d);
+                    text = st == CellState.HostileNow ? "<color=#ff6655>can spawn now</color>"
+                         : st == CellState.HostileLater ? "<color=#ffaa33>can spawn later</color>"
+                         : st == CellState.Passive ? "<color=#66bbff>can spawn</color>"
+                         : "<color=#66ee88>blocked by base</color>";
+                }
+                else text = $"<color=#999999>{fail}</color>";
+
+                if (!results.TryGetValue(entry.Name, out string prev)) { order.Add(entry.Name); results[entry.Name] = text; }
+                else if (fail == null && prev.Contains("#999999")) results[entry.Name] = text;
+            }
+            order.Sort((a, b) => results[b].Contains("#999999").CompareTo(results[a].Contains("#999999")));
+            int shown = 0;
+            foreach (string name in order)
+            {
+                if (shown++ >= 6) { lines.Add($"<color=#999999>…and {order.Count - 6} more</color>"); break; }
+                lines.Add($"{name}: {results[name]}");
+            }
+            if (order.Count == 0) lines.Add("<color=#999999>No spawners for this biome</color>");
+            return lines;
+        }
+
+        private static string Describe(Collider c)
+        {
+            Transform root = c.transform.root;
+            string name = root != null ? root.name : c.name;
+            return name.Replace("(Clone)", "").Trim();
         }
 
         private bool IsActiveNow(Entry e)
@@ -294,6 +393,7 @@ namespace SpawnVisualiser
                 (ZoneSystem.instance == null || !ZoneSystem.instance.GetGlobalKey(s.m_requiredGlobalKey))) return;
 
             PrefabInfo info = GetPrefabInfo(s.m_prefab);
+            if (!info.IsCreature) return; // e.g. weather meteors / projectiles
             list.Add(new Entry { Data = s, Hostile = info.Hostile, IsEvent = isEvent, Name = info.Name });
         }
 
@@ -328,7 +428,8 @@ namespace SpawnVisualiser
                     name = Localize(item.m_itemData.m_shared.m_name);
             }
 
-            info = new PrefabInfo { Hostile = hostile, Name = name };
+            bool isCreature = c != null || prefab.GetComponent<Fish>() != null;
+            info = new PrefabInfo { Hostile = hostile, IsCreature = isCreature, Name = name };
             s_prefabInfo[prefab] = info;
             return info;
         }

@@ -126,6 +126,30 @@ namespace SpawnVisualiser
             if (_root != null) _root.SetActive(visible);
         }
 
+        private bool? _ghostApplied;
+        private float _ghostOpacityApplied = -1f;
+
+        /// <summary>
+        /// Ghost mode draws the parts of tiles hidden behind grass, rocks, hills or the player at reduced opacity
+        /// (on top of everything). Off = tiles are depth tested only and hide behind things.
+        /// </summary>
+        public void SetGhost(bool on, float opacity)
+        {
+            if (!_supportsXRay) return;
+            opacity = Mathf.Clamp01(opacity);
+            bool effective = on && opacity > 0.001f;
+            if (_ghostApplied != effective)
+            {
+                _ghostApplied = effective;
+                _renderer.sharedMaterials = effective ? new[] { _hiddenMat, _visibleMat } : new[] { _visibleMat };
+            }
+            if (!Mathf.Approximately(_ghostOpacityApplied, opacity))
+            {
+                _ghostOpacityApplied = opacity;
+                _hiddenMat.color = new Color(1f, 1f, 1f, opacity);
+            }
+        }
+
         public void SetRingsVisible(bool visible)
         {
             _innerRing.enabled = visible;
@@ -146,9 +170,6 @@ namespace SpawnVisualiser
             _verts.Clear();
             _colors.Clear();
             _tris.Clear();
-
-            if (_hiddenMat != null)
-                _hiddenMat.color = new Color(1f, 1f, 1f, Mathf.Clamp01(Plugin.OccludedOpacity.Value));
 
             int cs = scanner.CellSize;
             int size = scanner.Size;
