@@ -25,7 +25,7 @@ The config file is `BepInEx/config/lachee.spawnvisualiser.cfg`, and you can also
 * the toggle key
 * the scan radius (16–128 m) and tile size
 * how often the overlay refreshes and how many tiles it checks per frame
-* opacity, and each overlay category on or off
+* opacity, how visible tiles hidden behind grass, rocks or hills are, and each overlay category on or off
 * rings, labels and the legend, plus where the legend sits
 * every colour
 

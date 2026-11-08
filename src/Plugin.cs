@@ -20,11 +20,12 @@ namespace SpawnVisualiser
         // General
         internal static ConfigEntry<KeyboardShortcut> ToggleKey;
         internal static ConfigEntry<float> ScanRadius;
-        internal static ConfigEntry<float> CellSize;
+        internal static ConfigEntry<int> CellSize;
         internal static ConfigEntry<float> RefreshInterval;
         internal static ConfigEntry<int> CellsPerFrame;
         // Display
         internal static ConfigEntry<float> Opacity;
+        internal static ConfigEntry<float> OccludedOpacity;
         internal static ConfigEntry<bool> ShowPassive;
         internal static ConfigEntry<bool> ShowProtected;
         internal static ConfigEntry<bool> ShowHostileLater;
@@ -68,9 +69,9 @@ namespace SpawnVisualiser
             ScanRadius = Config.Bind("General", "Scan radius", 64f,
                 new ConfigDescription("How far around you (in metres) spawnable ground is shown. World spawns happen 40-80 m from players.",
                     new AcceptableValueRange<float>(16f, 128f)));
-            CellSize = Config.Bind("General", "Tile size", 2f,
-                new ConfigDescription("Size of each overlay tile in metres. Smaller = more detail but slower scans.",
-                    new AcceptableValueRange<float>(1f, 8f)));
+            CellSize = Config.Bind("General", "Tile size", 2,
+                new ConfigDescription("Size of each overlay tile in whole metres. Smaller = more detail but slower scans.",
+                    new AcceptableValueRange<int>(1, 8)));
             RefreshInterval = Config.Bind("General", "Refresh interval", 1.5f,
                 new ConfigDescription("Seconds between overlay refreshes.", new AcceptableValueRange<float>(0.25f, 10f)));
             CellsPerFrame = Config.Bind("General", "Tiles per frame", 600,
@@ -79,6 +80,9 @@ namespace SpawnVisualiser
 
             Opacity = Config.Bind("Display", "Opacity", 0.8f,
                 new ConfigDescription("Overall opacity of the overlay tiles.", new AcceptableValueRange<float>(0.1f, 1f)));
+            OccludedOpacity = Config.Bind("Display", "Hidden tile opacity", 0.35f,
+                new ConfigDescription("Opacity (relative to normal) of tiles hidden behind grass, rocks or hills. 0 hides them completely.",
+                    new AcceptableValueRange<float>(0f, 1f)));
             ShowPassive = Config.Bind("Display", "Show passive spawns", true, "Show areas where only passive animals (deer, fish, birds...) can spawn.");
             ShowProtected = Config.Bind("Display", "Show protected areas", true, "Show areas where your base (workbench, campfire, etc.) is blocking hostile spawns.");
             ShowHostileLater = Config.Bind("Display", "Show conditional hostile spawns", true, "Show areas where hostiles can spawn, but not right now (e.g. only at night or in certain weather).");
@@ -171,7 +175,7 @@ namespace SpawnVisualiser
 
             if (_scanner.Step(CellsPerFrame.Value))
             {
-                _overlay.Rebuild(_scanner, CellSize.Value);
+                _overlay.Rebuild(_scanner);
                 _nextScan = Time.time + RefreshInterval.Value;
             }
 

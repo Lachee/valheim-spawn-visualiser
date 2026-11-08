@@ -18,6 +18,7 @@ namespace SpawnVisualiser
     {
         public Vector3 Position;
         public Vector3 Normal;
+        public Heightmap Heightmap;
         public CellState State;
     }
 
@@ -63,24 +64,29 @@ namespace SpawnVisualiser
         private Cell[] _front = new Cell[0];
         private Dictionary<string, CreatureInfo> _frontCreatures = new Dictionary<string, CreatureInfo>();
 
-        private int _size;          // cells per side
-        private float _cellSize;
+        private int _size;          // cells per side (always even)
+        private int _cellSize;      // metres; integer so tile edges line up with the 1 m terrain grid
         private Vector3 _origin;    // world position of cell (0,0) centre
         private int _next = -1;     // next cell to process, -1 = idle
 
         private bool _isDay, _isNight;
 
         public Cell[] Cells => _front;
+        public int Size => _size;
+        public int CellSize => _cellSize;
+        /// <summary>World X/Z of the minimum corner of the grid (always whole metres).</summary>
+        public Vector3 GridMin => new Vector3(_origin.x - _cellSize * 0.5f, 0f, _origin.z - _cellSize * 0.5f);
         public int Version { get; private set; }
         public Vector3 Center { get; private set; }
         public float Radius { get; private set; }
         public IReadOnlyDictionary<string, CreatureInfo> Creatures => _frontCreatures;
         public bool Busy => _next >= 0;
 
-        public void Begin(Vector3 center, float radius, float cellSize)
+        public void Begin(Vector3 center, float radius, int cellSize)
         {
-            _cellSize = Mathf.Max(0.5f, cellSize);
+            _cellSize = Mathf.Max(1, cellSize);
             _size = Mathf.Max(2, Mathf.CeilToInt(radius * 2f / _cellSize));
+            if ((_size & 1) == 1) _size++;  // even count keeps the grid edges on whole metres
             // Snap to the cell grid so tiles don't "swim" as the player walks.
             float half = _size * _cellSize * 0.5f;
             float sx = Mathf.Round(center.x / _cellSize) * _cellSize;
@@ -144,6 +150,7 @@ namespace SpawnVisualiser
             zs.GetGroundData(ref p, out Vector3 normal, out Heightmap.Biome biome, out Heightmap.BiomeArea biomeArea, out Heightmap hmap);
             cell.Position = p;
             cell.Normal = normal;
+            cell.Heightmap = hmap;
             if (hmap == null) return cell;            // terrain not loaded
             if (zs.IsBlocked(p)) return cell;         // under a building / tree / rock
 
