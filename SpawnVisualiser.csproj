@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>SpawnVisualiser</AssemblyName>
+    <RootNamespace>SpawnVisualiser</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <Version>1.0.0</Version>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DebugType>embedded</DebugType>
+    <!-- Game ships netstandard 2.1 while the net48 ref pack has 2.0; harmless at runtime -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+
+    <!-- Override on the command line: dotnet build -p:ValheimDir=/path/to/Valheim -->
+    <ValheimDir Condition="'$(ValheimDir)' == ''">/run/media/system/Games/SteamLibrary/steamapps/common/Valheim</ValheimDir>
+    <ManagedDir>$(ValheimDir)/valheim_Data/Managed</ManagedDir>
+    <BepInExDir>$(ValheimDir)/BepInEx</BepInExDir>
+    <!-- Amethyst Mod Manager mod folder; its contents are deployed into BepInEx/plugins when the mod is enabled -->
+    <AmethystModDir Condition="'$(AmethystModDir)' == ''">/var/home/lachee/Games/Amethyst/Valheim/mods/Spawn Visualiser</AmethystModDir>
+    <!-- Set to false to skip copying the built DLL into the Amethyst mod folder -->
+    <DeployToGame Condition="'$(DeployToGame)' == ''">true</DeployToGame>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx" HintPath="$(BepInExDir)/core/BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(BepInExDir)/core/0Harmony.dll" Private="false" />
+
+    <Reference Include="assembly_valheim" HintPath="$(ManagedDir)/assembly_valheim.dll" Private="false" />
+    <Reference Include="assembly_utils" HintPath="$(ManagedDir)/assembly_utils.dll" Private="false" />
+    <Reference Include="assembly_guiutils" HintPath="$(ManagedDir)/assembly_guiutils.dll" Private="false" />
+
+    <Reference Include="UnityEngine" HintPath="$(ManagedDir)/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(ManagedDir)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.PhysicsModule" HintPath="$(ManagedDir)/UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)/UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)/UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(ManagedDir)/UnityEngine.InputLegacyModule.dll" Private="false" />
+    <Reference Include="netstandard" HintPath="$(ManagedDir)/netstandard.dll" Private="false" />
+  </ItemGroup>
+
+  <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployToGame)' == 'true'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(AmethystModDir)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/amethyst/meta.ini" DestinationFolder="$(AmethystModDir)" Condition="!Exists('$(AmethystModDir)/meta.ini')" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(AmethystModDir) (redeploy in Amethyst to apply)" />
+  </Target>
+
+</Project>
