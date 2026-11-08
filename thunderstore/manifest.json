@@ -1,0 +1,9 @@
+{
+  "name": "SpawnVisualiser",
+  "version_number": "__VERSION__",
+  "website_url": "https://github.com/Lachee/valheim-spawn-visualiser",
+  "description": "Shows where creatures can spawn around you: hostile, passive, base-protected and blocked ground, with range rings, spawner labels and a crosshair inspector. Toggle with J.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2360"
+  ]
+}

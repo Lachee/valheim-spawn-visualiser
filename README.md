@@ -45,3 +45,13 @@ dotnet build -c Release -p:DeployToGame=false                # build only
 ```
 
 After building, enable **Spawn Visualiser** in Amethyst Mod Manager (refresh first if it isn't listed) and deploy.
+
+## Releasing
+
+Push a version tag and GitHub Actions does the rest:
+
+```sh
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+`.github/workflows/release.yml` downloads the Valheim dedicated server anonymously through SteamCMD (the same approach as Jotunn) and installs BepInExPack. It sets the plugin version from the tag, builds the mod, bundles `SpawnVisualiser-<version>.zip` (DLL, README and Thunderstore `manifest.json`) and publishes it as a GitHub Release. You can also run it manually from the Actions tab.
