@@ -1,6 +1,7 @@
 # Spawn Visualiser
 
 A BepInEx mod for Valheim that shows where creatures can spawn around you. Press **J** to toggle it.
+![spawn banner](https://github.com/Lachee/valheim-spawn-visualiser/blob/main/images/nexus-banner.jpeg?raw=true)
 
 ## What you see
 
@@ -22,6 +23,8 @@ A BepInEx mod for Valheim that shows where creatures can spawn around you. Press
 
 The overlay uses the same checks as the game's `SpawnSystem.IsSpawnPointGood`: biome, biome area, altitude, slope, forest, lava, ocean depth, distance from world centre, blocking objects and player-base protection. Spawns locked behind boss kills are left out until you unlock them. Spawns from an active raid are included.
 
+![image showing the different colours](https://github.com/Lachee/valheim-spawn-visualiser/blob/main/images/Screenshot%20From%202026-11-08%2014-48-35.jpg?raw=true)
+
 ## Config
 
 The config file is `BepInEx/config/lachee.spawnvisualiser.cfg`, and you can also change it with Configuration Manager (F1). Settings:
@@ -33,6 +36,8 @@ The config file is `BepInEx/config/lachee.spawnvisualiser.cfg`, and you can also
 * the crosshair inspector
 * rings, labels and the legend, plus where the legend sits
 * every colour
+
+I recommend using my [Mod Settings](https://github.com/Lachee/valheim-mod-settings) mod to configure and tweak these in game.
 
 ## Building
 
